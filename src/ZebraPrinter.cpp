@@ -15,17 +15,32 @@ std::string ZebraPrinter::findDevicePath() {
     devIntfData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
     std::string path = "";
 
-    if (SetupDiEnumDeviceInterfaces(hDevInfo, NULL, &printerGUID, 0, &devIntfData)) {
+    // On boucle sur toutes les imprimantes USB connectées (index i)
+    for (DWORD i = 0; SetupDiEnumDeviceInterfaces(hDevInfo, NULL, &printerGUID, i, &devIntfData); i++) {
         DWORD size = 0;
         SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, NULL, 0, &size, NULL);
-        std::vector<char> buffer(size);
-        auto detailData = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA>(buffer.data());
-        detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
+        
+        if (size > 0) {
+            std::vector<char> buffer(size);
+            auto detailData = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA>(buffer.data());
+            detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
 
-        if (SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, detailData, size, NULL, NULL)) {
-            path = detailData->DevicePath;
+            if (SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, detailData, size, NULL, NULL)) {
+                std::string currentPath = detailData->DevicePath;
+                
+                // On transforme en minuscule pour comparer sans erreur
+                std::string lowerPath = currentPath;
+                for(char &c : lowerPath) c = (char)tolower(c);
+
+                // FILTRE : On cherche le VID de Zebra (0a5f)
+                if (lowerPath.find("vid_0a5f") != std::string::npos) {
+                    path = currentPath;
+                    break; // On a trouvé une Zebra, on s'arrête !
+                }
+            }
         }
     }
+
     SetupDiDestroyDeviceInfoList(hDevInfo);
     return path;
 }
