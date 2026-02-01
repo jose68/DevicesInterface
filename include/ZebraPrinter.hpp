@@ -5,6 +5,7 @@
 #include <setupapi.h>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 class ZebraPrinter {
 public:

@@ -1,13 +1,13 @@
 #include "ZebraPrinter.hpp"
 
 ZebraPrinter::ZebraPrinter() {
-    // GUID standard pour les interfaces d'impression USB Windows
+    // GUID standard pour les périphériques d'impression USB
     printerGUID = {0x28d4583d, 0x0606, 0x11d2, {0xb0, 0x3a, 0x00, 0x60, 0x97, 0x09, 0x53, 0x02}};
     cachedPath = "";
 }
 
-// Fonction de bas niveau pour trouver le chemin matériel de l'imprimante
 std::string ZebraPrinter::findDevicePath() {
+    // 1. Récupérer la liste de tous les périphériques d'impression USB connectés
     HDEVINFO hDevInfo = SetupDiGetClassDevs(&printerGUID, NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
     if (hDevInfo == INVALID_HANDLE_VALUE) return "";
 
@@ -15,27 +15,29 @@ std::string ZebraPrinter::findDevicePath() {
     devIntfData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
     std::string path = "";
 
-    // On boucle sur toutes les imprimantes USB connectées (index i)
+    // 2. Parcourir la liste pour trouver spécifiquement une Zebra (VID 0a5f)
     for (DWORD i = 0; SetupDiEnumDeviceInterfaces(hDevInfo, NULL, &printerGUID, i, &devIntfData); i++) {
         DWORD size = 0;
+        // Demander la taille requise pour les détails du périphérique
         SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, NULL, 0, &size, NULL);
         
         if (size > 0) {
             std::vector<char> buffer(size);
-            auto detailData = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA>(buffer.data());
+            auto* detailData = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA>(buffer.data());
             detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
 
+            // Récupérer le chemin réel (ex: \\?\usb#vid_0a5f&pid_00fb#...)
             if (SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, detailData, size, NULL, NULL)) {
                 std::string currentPath = detailData->DevicePath;
                 
-                // On transforme en minuscule pour comparer sans erreur
+                // Conversion en minuscule pour un filtrage fiable
                 std::string lowerPath = currentPath;
-                for(char &c : lowerPath) c = (char)tolower(c);
+                for(char &c : lowerPath) c = (char)tolower((unsigned char)c);
 
-                // FILTRE : On cherche le VID de Zebra (0a5f)
+                // FILTRE : On vérifie si c'est bien une Zebra (Vendor ID : 0a5f)
                 if (lowerPath.find("vid_0a5f") != std::string::npos) {
                     path = currentPath;
-                    break; // On a trouvé une Zebra, on s'arrête !
+                    break; // On a trouvé notre Zebra, on arrête la boucle
                 }
             }
         }
@@ -45,19 +47,12 @@ std::string ZebraPrinter::findDevicePath() {
     return path;
 }
 
-// Tentative d'écriture avec timeouts pour ne pas bloquer Java
 bool ZebraPrinter::tryWrite(const std::string& path, const std::string& data) {
-    HANDLE hFile = CreateFileA(path.c_str(), 
-                               GENERIC_WRITE, 
-                               FILE_SHARE_READ | FILE_SHARE_WRITE, 
-                               NULL, 
-                               OPEN_EXISTING, 
-                               FILE_ATTRIBUTE_NORMAL, 
-                               NULL);
+    HANDLE hFile = CreateFileA(path.c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (hFile == INVALID_HANDLE_VALUE) return false;
 
-    // Sécurité : Timeout de 500ms pour éviter de geler l'app si l'USB bugge
+    // Timeout de sécurité pour ne pas bloquer l'app si l'imprimante sature
     COMMTIMEOUTS timeouts = { 0 };
     timeouts.WriteTotalTimeoutConstant = 500; 
     SetCommTimeouts(hFile, &timeouts);
@@ -65,20 +60,15 @@ bool ZebraPrinter::tryWrite(const std::string& path, const std::string& data) {
     DWORD written;
     bool success = WriteFile(hFile, data.c_str(), (DWORD)data.length(), &written, NULL);
     
-    // On valide que tout a été envoyé
-    if (success && written != data.length()) success = false;
-
     CloseHandle(hFile);
-    return success;
+    return success && (written == data.length());
 }
 
-// Logique principale : Essai direct -> si échec -> scan -> essai final
 bool ZebraPrinter::sendZPL(const std::string& data) {
-    if (!cachedPath.empty()) {
-        if (tryWrite(cachedPath, data)) return true;
-    }
+    // On essaie le chemin en cache d'abord (très rapide)
+    if (!cachedPath.empty() && tryWrite(cachedPath, data)) return true;
 
-    // Le cache est mort ou vide, on rescane le bus USB
+    // Si ça échoue, on rescane (cas où l'imprimante a été débranchée/rebranchée)
     cachedPath = findDevicePath();
     if (!cachedPath.empty()) {
         return tryWrite(cachedPath, data);
