@@ -36,7 +36,7 @@ extern "C" {
         return success ? JNI_TRUE : JNI_FALSE;
     }
 
-    JNIEXPORT jstring JNICALL Java_com_dhl_scale_ScaleService_nativeReadWeight(JNIEnv *env, jobject obj, jstring port, jint baud, jint data, jint stop, jint parity, jstring req, jint timeout)
+    JNIEXPORT jstring JNICALL Java_com_dhl_scale_ScaleService_scaleReadWeight(JNIEnv *env, jobject obj, jstring port, jint baud, jint data, jint stop, jint parity, jstring req, jint timeout)
     {
         if (port == NULL || req == NULL) return NULL;
 
