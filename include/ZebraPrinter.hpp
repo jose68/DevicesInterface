@@ -9,7 +9,8 @@ public:
     ZebraPrinter();
     ~ZebraPrinter() = default;
 
-    bool sendZPL(const std::string& data);
+    bool sendZplDirect(const std::string& data);
+    bool sendZplSpooler(const std::wstring& printerName, const std::string& data);
 
 private:
     std::string cachedPath;

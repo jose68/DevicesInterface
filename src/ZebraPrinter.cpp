@@ -8,6 +8,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <winspool.h>
 
 ZebraPrinter::ZebraPrinter() : cachedPath("") {}
 
@@ -79,7 +80,7 @@ std::string ZebraPrinter::findDevicePath() {
     return finalPath;
 }
 
-bool ZebraPrinter::sendZPL(const std::string& data) {
+bool ZebraPrinter::sendZplDirect(const std::string& data) {
     if (!cachedPath.empty() && tryWrite(cachedPath, data)) {
         return true;
     }
@@ -90,4 +91,23 @@ bool ZebraPrinter::sendZPL(const std::string& data) {
     }
 
     return false;
+}
+
+bool ZebraPrinter::sendZplSpooler(const std::wstring& printerName, const std::string& data) {
+    HANDLE hPrinter = NULL;
+    DOC_INFO_1W di = { (LPWSTR)L"Zebra Print Job", NULL, (LPWSTR)L"RAW" };
+    DWORD dwBytesWritten = 0;
+    BOOL success = FALSE;
+
+    if (OpenPrinterW((LPWSTR)printerName.c_str(), &hPrinter, NULL)) {
+        if (StartDocPrinterW(hPrinter, 1, (LPBYTE)&di)) {
+            if (StartPagePrinter(hPrinter)) {
+                success = WritePrinter(hPrinter, (LPVOID)data.c_str(), (DWORD)data.length(), &dwBytesWritten);
+                EndPagePrinter(hPrinter);
+            }
+            EndDocPrinter(hPrinter);
+        }
+        ClosePrinter(hPrinter);
+    }
+    return (success && dwBytesWritten == data.length());
 }

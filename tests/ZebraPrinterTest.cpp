@@ -7,7 +7,7 @@ int main() {
 
     std::cout << "Tentative d'impression directe..." << std::endl;
     
-    if (printer.sendZPL(testLabel)) {
+    if (printer.sendZplDirect(testLabel)) {
         std::cout << "Succes ! L'etiquette doit sortir." << std::endl;
     } else {
         std::cerr << "Erreur : Imprimante introuvable ou echec d'ecriture." << std::endl;

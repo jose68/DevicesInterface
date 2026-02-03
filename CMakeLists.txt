@@ -28,6 +28,7 @@ set(STATIC_LINK_FLAGS
 # 5. La DLL (devicesinterface) - C'est elle qui sera utilisée par Java
 add_library(devicesinterface SHARED 
     src/ZebraPrinter.cpp 
+    src/Scale.cpp
     src/DeviceNativeBridge.cpp
 )
 
@@ -68,4 +69,18 @@ target_link_options(zebra_test PRIVATE
 target_link_libraries(zebra_test PRIVATE 
     setupapi 
     cfgmgr32
+)
+
+# Ajout de l'exécutable de test pour la balance
+add_executable(scale_test 
+    tests/ScaleTest.cpp 
+    src/Scale.cpp
+)
+
+# Application des mêmes flags statiques
+target_link_options(scale_test PRIVATE ${STATIC_LINK_FLAGS})
+
+# Dossier de sortie
+set_target_properties(scale_test PROPERTIES 
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
