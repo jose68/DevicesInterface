@@ -1,22 +1,22 @@
 #ifndef ZEBRAPRINTER_HPP
 #define ZEBRAPRINTER_HPP
 
-#include <windows.h>
-#include <setupapi.h>
 #include <string>
-#include <vector>
-#include <algorithm>
+#include <windows.h>
 
 class ZebraPrinter {
 public:
     ZebraPrinter();
+    ~ZebraPrinter() = default;
+
     bool sendZPL(const std::string& data);
 
 private:
-    GUID printerGUID;
     std::string cachedPath;
-
     std::string findDevicePath();
+    std::string getInterfacePath(const std::string& instanceId);
+    
+    // Vérifiez bien que cette ligne existe :
     bool tryWrite(const std::string& path, const std::string& data);
 };
 

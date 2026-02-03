@@ -1,61 +1,23 @@
 #include "ZebraPrinter.hpp"
+#include <windows.h>
+#include <setupapi.h>
+#include <cfgmgr32.h>
+#include <initguid.h>
+#include <devguid.h>
+#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
 
-ZebraPrinter::ZebraPrinter() {
-    // GUID standard pour les périphériques d'impression USB
-    printerGUID = {0x28d4583d, 0x0606, 0x11d2, {0xb0, 0x3a, 0x00, 0x60, 0x97, 0x09, 0x53, 0x02}};
-    cachedPath = "";
-}
-
-std::string ZebraPrinter::findDevicePath() {
-    // 1. Récupérer la liste de tous les périphériques d'impression USB connectés
-    HDEVINFO hDevInfo = SetupDiGetClassDevs(&printerGUID, NULL, NULL, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-    if (hDevInfo == INVALID_HANDLE_VALUE) return "";
-
-    SP_DEVICE_INTERFACE_DATA devIntfData;
-    devIntfData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
-    std::string path = "";
-
-    // 2. Parcourir la liste pour trouver spécifiquement une Zebra (VID 0a5f)
-    for (DWORD i = 0; SetupDiEnumDeviceInterfaces(hDevInfo, NULL, &printerGUID, i, &devIntfData); i++) {
-        DWORD size = 0;
-        // Demander la taille requise pour les détails du périphérique
-        SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, NULL, 0, &size, NULL);
-        
-        if (size > 0) {
-            std::vector<char> buffer(size);
-            auto* detailData = reinterpret_cast<PSP_DEVICE_INTERFACE_DETAIL_DATA>(buffer.data());
-            detailData->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA);
-
-            // Récupérer le chemin réel (ex: \\?\usb#vid_0a5f&pid_00fb#...)
-            if (SetupDiGetDeviceInterfaceDetail(hDevInfo, &devIntfData, detailData, size, NULL, NULL)) {
-                std::string currentPath = detailData->DevicePath;
-                
-                // Conversion en minuscule pour un filtrage fiable
-                std::string lowerPath = currentPath;
-                for(char &c : lowerPath) c = (char)tolower((unsigned char)c);
-
-                // FILTRE : On vérifie si c'est bien une Zebra (Vendor ID : 0a5f)
-                if (lowerPath.find("vid_0a5f") != std::string::npos) {
-                    path = currentPath;
-                    break; // On a trouvé notre Zebra, on arrête la boucle
-                }
-            }
-        }
-    }
-
-    SetupDiDestroyDeviceInfoList(hDevInfo);
-    return path;
-}
+ZebraPrinter::ZebraPrinter() : cachedPath("") {}
 
 bool ZebraPrinter::tryWrite(const std::string& path, const std::string& data) {
-    HANDLE hFile = CreateFileA(path.c_str(), GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE hFile = CreateFileA(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, 
+                              NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
-    if (hFile == INVALID_HANDLE_VALUE) return false;
-
-    // Timeout de sécurité pour ne pas bloquer l'app si l'imprimante sature
-    COMMTIMEOUTS timeouts = { 0 };
-    timeouts.WriteTotalTimeoutConstant = 500; 
-    SetCommTimeouts(hFile, &timeouts);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return false;
+    }
 
     DWORD written;
     bool success = WriteFile(hFile, data.c_str(), (DWORD)data.length(), &written, NULL);
@@ -64,11 +26,64 @@ bool ZebraPrinter::tryWrite(const std::string& path, const std::string& data) {
     return success && (written == data.length());
 }
 
-bool ZebraPrinter::sendZPL(const std::string& data) {
-    // On essaie le chemin en cache d'abord (très rapide)
-    if (!cachedPath.empty() && tryWrite(cachedPath, data)) return true;
+std::string ZebraPrinter::getInterfacePath(const std::string& instanceId) {
+    unsigned long listSize = 0;
+    
+    // GUID de classe d'interface USB brut
+    // GUID_DEVINTERFACE_USB_DEVICE {A5DCBF10-6530-11D2-901F-00C04FB951ED}
+    static const GUID GUID_USB_DEVICE = {0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
+    CM_Get_Device_Interface_List_SizeA(&listSize, (LPGUID)&GUID_USB_DEVICE, NULL, CM_GET_DEVICE_INTERFACE_LIST_PRESENT);
+    
+    if (listSize > 1) {
+        std::vector<char> buffer(listSize);
+        if (CM_Get_Device_Interface_ListA((LPGUID)&GUID_USB_DEVICE, NULL, buffer.data(), listSize, CM_GET_DEVICE_INTERFACE_LIST_PRESENT) == CR_SUCCESS) {
+            char* currentStr = buffer.data();
+            while (*currentStr != '\0') {
+                std::string path = currentStr;
+                std::string lowerPath = path;
+                for(char &c : lowerPath) c = (char)tolower((unsigned char)c);
 
-    // Si ça échoue, on rescane (cas où l'imprimante a été débranchée/rebranchée)
+                if (lowerPath.find("vid_0a5f") != std::string::npos) {
+                    return path; 
+                }
+                currentStr += strlen(currentStr) + 1;
+            }
+        }
+    }
+    
+    return "";
+}
+
+std::string ZebraPrinter::findDevicePath() {
+    HDEVINFO hDevInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_USB, NULL, NULL, DIGCF_PRESENT);
+    if (hDevInfo == INVALID_HANDLE_VALUE) return "";
+
+    SP_DEVINFO_DATA devInfoData;
+    devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    std::string finalPath = "";
+
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); i++) {
+        char instanceId[MAX_PATH];
+        if (SetupDiGetDeviceInstanceIdA(hDevInfo, &devInfoData, instanceId, sizeof(instanceId), NULL)) {
+            std::string idStr = instanceId;
+            std::transform(idStr.begin(), idStr.end(), idStr.begin(), ::toupper);
+
+            if (idStr.find("VID_0A5F") != std::string::npos) {
+                finalPath = getInterfacePath(idStr);
+                if (!finalPath.empty()) break;
+            }
+        }
+    }
+
+    SetupDiDestroyDeviceInfoList(hDevInfo);
+    return finalPath;
+}
+
+bool ZebraPrinter::sendZPL(const std::string& data) {
+    if (!cachedPath.empty() && tryWrite(cachedPath, data)) {
+        return true;
+    }
+
     cachedPath = findDevicePath();
     if (!cachedPath.empty()) {
         return tryWrite(cachedPath, data);

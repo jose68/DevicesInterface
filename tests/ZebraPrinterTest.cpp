@@ -3,7 +3,7 @@
 
 int main() {
     ZebraPrinter printer;
-    std::string testLabel = "^XA^FO50,50^A0N,50,50^FDTest Autonome C++^FS^XZ";
+    std::string testLabel = "^XA^FO50,50^A0N,50,50^FDTest Autonome^FS^XZ";
 
     std::cout << "Tentative d'impression directe..." << std::endl;
     
