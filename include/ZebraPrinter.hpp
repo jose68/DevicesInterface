@@ -15,8 +15,6 @@ private:
     std::string cachedPath;
     std::string findDevicePath();
     std::string getInterfacePath();
-    
-    // Vérifiez bien que cette ligne existe :
     bool tryWrite(const std::string& path, const std::string& data);
 };
 
