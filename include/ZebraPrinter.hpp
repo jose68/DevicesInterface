@@ -11,11 +11,10 @@ public:
 
     bool sendZplDirect(const std::string& data);
     bool sendZplSpooler(const std::wstring& printerName, const std::string& data);
-
 private:
     std::string cachedPath;
     std::string findDevicePath();
-    std::string getInterfacePath(const std::string& instanceId);
+    std::string getInterfacePath();
     
     // Vérifiez bien que cette ligne existe :
     bool tryWrite(const std::string& path, const std::string& data);

@@ -7,13 +7,13 @@ int main() {
 
     std::cout << "Tentative d'impression directe..." << std::endl;
     
-    if (printer.sendZplDirect(testLabel)) {
+   if (printer.sendZplDirect(testLabel)) {
         std::cout << "Succes ! L'etiquette doit sortir." << std::endl;
     } else {
         std::cerr << "Erreur : Imprimante introuvable ou echec d'ecriture." << std::endl;
         std::cerr << "Verifiez le branchement USB." << std::endl;
-    }
-
+    } 
+   // printer.FindZebraPrinter();
     std::cout << "Appuyez sur Entree pour quitter..." << std::endl;
     std::cin.get();
     return 0;
